@@ -12,10 +12,14 @@ Or add to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  stubkit: ^1.0.0
+  stubkit: ^1.0.1
 ```
 
 ## Quick Start
+
+The SDK uses two auth inputs: a **publishable key** (safe to ship in the
+app) for offering + event calls, and a **tenant JWT** callback that returns
+the end-user's identity token for entitlement + purchase calls.
 
 ### 1. Configure
 
@@ -23,7 +27,15 @@ dependencies:
 import 'package:stubkit/stubkit.dart';
 
 void main() {
-  Stubkit.configure(apiKey: 'pk_live_xxx', appId: 'myapp');
+  Stubkit.configure(
+    publishableKey: 'pk_live_xxxxxxxxxxxxxxxxxxxxxxxx',
+    appId: 'your-app-id',
+    getAuthToken: () async {
+      // Return your tenant JWT — Supabase access token / Clerk JWT /
+      // Firebase ID token / custom RS256 token.
+      return await authProvider.currentAccessToken();
+    },
+  );
   runApp(MyApp());
 }
 ```
@@ -37,7 +49,15 @@ if (isPro) {
 }
 ```
 
-### 3. Sync purchase (after in_app_purchase)
+### 3. Fetch paywall config
+
+```dart
+final offering = await Stubkit.shared.getOffering();
+print(offering.title);       // "Unlock Pro"
+print(offering.features);    // ["Unlimited projects", ...]
+```
+
+### 4. Sync purchase (after in_app_purchase)
 
 ```dart
 final entitlements = await Stubkit.shared.syncPurchase(
@@ -48,16 +68,20 @@ final entitlements = await Stubkit.shared.syncPurchase(
 );
 ```
 
-### 4. Get all entitlements
+### 5. Track behavioural events
 
 ```dart
-final entitlements = await Stubkit.shared.getEntitlements('user_123');
-for (final e in entitlements) {
-  print('${e.entitlement}: ${e.status}');
+final result = await Stubkit.shared.track(
+  event: 'hit_export_limit',
+  userId: 'user_123',
+  properties: {'count': 5, 'plan': 'free'},
+);
+if (result.showPaywall != null) {
+  presentPaywall(result.showPaywall!);
 }
 ```
 
-### 5. Force refresh
+### 6. Force refresh
 
 ```dart
 final refreshed = await Stubkit.shared.refresh('user_123');
@@ -65,59 +89,30 @@ final refreshed = await Stubkit.shared.refresh('user_123');
 
 ## API Reference
 
-### `Stubkit.configure({apiKey, appId, baseUrl?})`
+### `Stubkit.configure({publishableKey, appId, getAuthToken, baseUrl?})`
 
 Initialize the SDK. Call once at app startup.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `apiKey` | `String` | Yes | Your Stubkit API key |
-| `appId` | `String` | Yes | Your app identifier |
+| `publishableKey` | `String` | Yes | `pk_live_…` / `pk_test_…` |
+| `appId` | `String` | Yes | Your stubkit app identifier |
+| `getAuthToken` | `Future<String> Function()` | Yes | Returns your tenant JWT |
 | `baseUrl` | `String` | No | API base URL (default: `https://api.stubkit.com`) |
 
-### `Stubkit.shared.isActive(userId, entitlement): Future<bool>`
+### Entitlement & purchases (uses tenant JWT)
 
-Returns `true` if the user has an active (or grace period) entitlement.
+- `isActive(userId, entitlement)` → `Future<bool>`
+- `getEntitlements(userId)` → `Future<List<Entitlement>>`
+- `syncPurchase({userId, platform, productId, receipt, transactionId?, purchaseToken?})` → `Future<List<Entitlement>>`
+- `refresh(userId)` → `Future<List<Entitlement>>`
 
-### `Stubkit.shared.getEntitlements(userId): Future<List<Entitlement>>`
+### Paywalls & events (uses publishable key)
 
-Returns all entitlements for a user.
+- `getOffering({slug = 'default', locale})` → `Future<Offering>`
+- `track({event, userId, properties})` → `Future<TrackResult>`
 
-### `Stubkit.shared.syncPurchase({userId, platform, productId, receipt, transactionId?}): Future<List<Entitlement>>`
-
-Syncs a purchase receipt with Stubkit. Returns updated entitlements.
-
-### `Stubkit.shared.refresh(userId): Future<List<Entitlement>>`
-
-Force-refreshes entitlements from the server.
-
-## Models
-
-### `Platform`
-`ios`, `android`, `web`
-
-### `EntitlementStatus`
-`active`, `grace`, `expired`, `cancelled`, `refunded`
-
-### `EntitlementSource`
-`iap`, `stripe`, `adminGrant`, `trial`
-
-### `Entitlement`
-```dart
-class Entitlement {
-  final String entitlement;
-  final EntitlementStatus status;
-  final EntitlementSource source;
-  final String productId;
-  final String? expiresAt;
-  final String? renewedAt;
-  final String? graceExpiresAt;
-}
-```
-
-## Error Handling
-
-All methods throw `StubkitError` on failure:
+## Error handling
 
 ```dart
 try {
@@ -129,11 +124,32 @@ try {
 
 `isActive` returns `false` instead of throwing on errors.
 
+## Migrating from 1.0.0
+
+The single-key `configure(apiKey:, appId:)` is gone. Replace with:
+
+```dart
+Stubkit.configure(
+  publishableKey: 'pk_live_x',
+  appId: 'app',
+  getAuthToken: () async => await auth.token(),
+);
+```
+
+Offering and event calls use the publishable key automatically;
+entitlement and purchase calls use the JWT returned from `getAuthToken`.
+
 ## Requirements
 
 - Dart SDK >= 3.0.0
 - Flutter 3.10+
 
+## Links
+
+- [Documentation](https://docs.stubkit.com)
+- [Tenant JWT setup](https://docs.stubkit.com/getting-started/tenant-jwt)
+- [Dashboard](https://app.stubkit.com)
+
 ## License
 
-MIT - Cryptosam LLC
+MIT — Cryptosam LLC
