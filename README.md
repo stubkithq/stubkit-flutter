@@ -4,16 +4,18 @@ Flutter/Dart SDK for [Stubkit](https://stubkit.com) subscription validation API.
 
 ## Installation
 
-```bash
-flutter pub add stubkit
-```
-
-Or add to your `pubspec.yaml`:
+Add to your `pubspec.yaml` via a git reference (stubkit is distributed
+straight from GitHub; no pub.dev publication required):
 
 ```yaml
 dependencies:
-  stubkit: ^1.0.1
+  stubkit:
+    git:
+      url: https://github.com/stubkithq/stubkit-flutter
+      ref: v1.0.1
 ```
+
+Then run `flutter pub get`.
 
 ## Quick Start
 
